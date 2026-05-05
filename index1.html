@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Image to PDF Pro</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      font-family: system-ui;
+      margin: 0;
+      background: #f4f6fb;
+    }
+
+    .header {
+      background: white;
+      padding: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      position: sticky;
+      top: 0;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .controls {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    input {
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+
+    button {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .primary { background: #4CAF50; color: white; }
+    .blue { background: #2196F3; color: white; }
+    .danger { background: #f44336; color: white; }
+    .orange { background: #ff9800; color: white; }
+    .purple { background: #673ab7; color: white; }
+
+    .dropzone {
+      margin-top: 10px;
+      padding: 20px;
+      border: 2px dashed #bbb;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 10px;
+      padding: 15px;
+    }
+
+    .card {
+      background: white;
+      padding: 8px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+
+    img {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+    }
+
+    .loader {
+      display: none;
+      margin-top: 10px;
+      color: green;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="header">
+  <h1>📸 Image to PDF</h1>
+
+  <div class="controls">
+    <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
+    <button class="blue" onclick="pick()">➕ Add</button>
+
+    <input type="text" id="fileName" value="my-images.pdf">
+
+    <button class="primary" onclick="createPDF()">📄 Convert</button>
+
+    <div id="count">0 images</div>
+  </div>
+
+  <div class="dropzone" id="dropzone">
+    Drag images here or click Add
+  </div>
+
+  <div class="loader" id="loader">Creating PDF...</div>
+</div>
+
+<div class="grid" id="preview"></div>
+
+<script>
+
+let images = [];
+
+function pick() {
+  document.getElementById("fileInput").click();
+}
+
+document.getElementById("fileInput").addEventListener("change", e => {
+  addFiles(e.target.files);
+});
+
+function addFiles(files) {
+  Array.from(files).forEach(file => {
+    images.push({
+      file,
+      url: URL.createObjectURL(file),
+      rotation: 0
+    });
+  });
+  update();
+}
+
+function update() {
+  document.getElementById("count").innerText = images.length + " images";
+
+  const preview = document.getElementById("preview");
+  preview.innerHTML = "";
+
+  images.forEach((img, i) => {
+    const el = document.createElement("div");
+    el.className = "card";
+
+    el.innerHTML = `
+      <img src="${img.url}" style="transform: rotate(${img.rotation}deg)">
+      <div>
+        <button class="purple" onclick="rot(${i},-90)">⟲</button>
+        <button class="purple" onclick="rot(${i},90)">⟳</button><br>
+        <button class="orange" onclick="move(${i},-1)">⬆️</button>
+        <button class="orange" onclick="move(${i},1)">⬇️</button><br>
+        <button class="danger" onclick="del(${i})">❌</button>
+      </div>
+    `;
+
+    preview.appendChild(el);
+  });
+}
+
+function rot(i, val) {
+  images[i].rotation += val;
+  update();
+}
+
+function move(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= images.length) return;
+  [images[i], images[j]] = [images[j], images[i]];
+  update();
+}
+
+function del(i) {
+  images.splice(i,1);
+  update();
+}
+
+
+// Drag & drop
+const dz = document.getElementById("dropzone");
+
+dz.addEventListener("dragover", e => e.preventDefault());
+
+dz.addEventListener("drop", e => {
+  e.preventDefault();
+  addFiles(e.dataTransfer.files);
+});
+
+
+// PDF creation
+async function createPDF() {
+
+  if (images.length === 0) {
+    alert("Add images first");
+    return;
+  }
+
+  document.getElementById("loader").style.display = "block";
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF();
+
+  let name = document.getElementById("fileName").value || "my-images.pdf";
+  if (!name.endsWith(".pdf")) name += ".pdf";
+
+  for (let i = 0; i < images.length; i++) {
+
+    const img = await load(images[i].file);
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    let w = img.width;
+    let h = img.height;
+
+    // compress large images
+    const max = 1200;
+    if (w > max || h > max) {
+      const ratio = Math.min(max/w, max/h);
+      w *= ratio;
+      h *= ratio;
+    }
+
+    canvas.width = w;
+    canvas.height = h;
+
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const data = canvas.toDataURL("image/jpeg", 0.8);
+
+    if (i !== 0) pdf.addPage();
+
+    const pw = 210, ph = 297;
+
+    let r = Math.min(pw/w, ph/h);
+    let iw = w*r, ih = h*r;
+
+    pdf.addImage(data, 'JPEG', (pw-iw)/2, (ph-ih)/2, iw, ih);
+  }
+
+  pdf.save(name);
+
+  document.getElementById("loader").style.display = "none";
+}
+
+function load(file) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+</script>
+
+</body>
+</html>
